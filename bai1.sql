@@ -130,10 +130,10 @@ AS
 	WHERE MaPT NOT IN (SELECT MaPT FROM DONHANG)
 GO
 
--- Câu 3: Tạo khung nhìn có tên V_ProductInfo để lấy thông tin sản phẩm đã được mua trên 9 sản phẩm.
-ALTER VIEW V_ProductInfo
+-- Câu 3: Tạo khung nhìn có tên V_ProductInfo để lấy thông tin sản phẩm đã được bán từ 9 sản phẩm trở lên.
+CREATE VIEW V_ProductInfo
 AS
-	SELECT c.MaSP, s.TenSP, s.MoTa, s.Gia, s.SoLuong, SUM(c.SoLuongMua) TongSLMua
+	SELECT c.MaSP, s.TenSP, s.MoTa, s.Gia, s.SoLuong, SUM(c.SoLuongMua) TongSLBan
 	FROM SANPHAM s JOIN CHITIET c ON s.MaSP = c.MaSP
 	GROUP BY c.MaSP, s.TenSP, s.MoTa, s.Gia, s.SoLuong
 	HAVING SUM(c.SoLuongMua) >= 9
