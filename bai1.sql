@@ -78,7 +78,7 @@ VALUES	('DH001', 'KH001', 'PT001', '3/9/2022', N'Đang giao', '130000'),
 		('DH004', 'KH007', 'PT002', '8/2/2020', N'Đã giao', '110000'),
 		('DH005', 'KH003', 'PT001', '1/12/2021', N'Đã giao', '770000')
 GO
---Liệt kê thông tin khách hàng đã mua sản phẩm có mã là 'SP002'
+
 INSERT INTO CHITIET(MaCT, MaDH, MaSP, SoLuongMua, GiaSP, ThanhTien)
 VALUES	('CT001', 'DH001', 'SP001', '2', '50000', '100000'),
 		('CT002', 'DH001', 'SP002', '1', '30000', '30000'),
@@ -287,6 +287,11 @@ BEGIN
 END
 GO
 
+exec Sp_DonHang 'DH006', 'KH001', 'PT001', '12/12/2018', 'Đã giao', '300000'
+select * from DONHANG
+GO
+
+
 --Câu 3: Tạo Procedure có tên là Sp_XoaSP. Xóa thông tin sản phẩm với mã sản phẩm được truyền vào như tham số.
 CREATE PROC Sp_XoaSP (@MaSP char(10))
 AS
@@ -339,3 +344,126 @@ END
 GO
 
 EXECUTE Sp_DaMua 'KH009'
+GO
+
+--1
+--Trigger: Tg_TongChiTiet. Khi thực hiện xóa bảng ghi trong bảng CHITIET thì hiển thị tổng số lượng bảng ghi còn lại.
+
+CREATE TRIGGER Tg_TongChiTiet ON CHITIET FOR DELETE
+AS
+BEGIN
+	DECLARE @Tong int
+	SELECT @Tong = COUNT(*) FROM CHITIET
+	PRINT N'Tổng số bản ghi còn lại trong bảng CHITIET là: ' + CAST(@Tong AS varchar(10))
+END
+GO
+
+select * from CHITIET
+GO
+
+INSERT INTO CHITIET(MaCT, MaDH, MaSP, SoLuongMua, GiaSP, ThanhTien)
+VALUES	('CT0010', 'DH001', 'SP001', '2', '50000', '100000')
+GO
+
+delete from CHITIET
+where MaCT = 'CT0013'
+GO
+
+--Event:e_CapNhatGiaSP. Cập nhật giảm giá sản phẩm thực hiện sau thời gian 1 phút sau khi sự kiện được tạo.
+CREATE EVENT e_CapNhatGiaSP
+ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 MINUTE
+ON COMPLETION PRESERVE
+DO
+   UPDATE SANPHAM SET Gia = 500000 WHERE MaSP = 'SP001';
+
+--2
+--Trigger: Tg_CapNhatSL. Cập nhật số lượng hàng trong bảng SANPHAM sau khi đặt hàng.
+CREATE TRIGGER Tg_CapNhatSL ON CHITIET AFTER INSERT
+AS 
+BEGIN
+	UPDATE SANPHAM
+	SET SoLuong = SoLuong - (SELECT SoLuongMua FROM inserted JOIN SANPHAM ON inserted.MaSP = SANPHAM.MaSP)
+	FROM SANPHAM
+	JOIN inserted ON SANPHAM.MaSP = inserted.MaSP
+END
+GO 
+
+update SANPHAM
+set SoLuong = '100'
+where MaSP = 'SP001'
+
+select * from SANPHAM
+
+INSERT INTO CHITIET(MaCT, MaDH, MaSP, SoLuongMua, GiaSP, ThanhTien)
+VALUES	('CT0010', 'DH001', 'SP001', '2', '50000', '100000')
+GO
+
+--Event: e_KhachHang. Thêm 1 khách hàng vào bảng KHACHHANG ngay khi sự kiện được tạo.
+CREATE EVENT e_KhachHang
+ON SCHEDULE AT CURRENT_TIMESTAMP
+DO
+  INSERT INTO KHACHHANG(MaKH, TenKH, Email, SoDienThoai, DiaChi)
+  VALUES('KH008',N'Trần Thị Thanh Mai','tttm@gmail.com','0771234599',N'Quảng Nam')
+GO
+
+--3
+--Trigger: Tg_DonHangTruoc2019 Khi thực hiện xóa bảng ghi trong bảng DONHNAG,
+--kiểm tra xem thời gian đặt hàng của bảng ghi đó có trước năm 2019 hay không.
+--Nếu không thì hiển thị ra thông báo "Chỉ được xóa những đơn hàng có ngày đặt hàng trước năm 2019".
+
+CREATE TRIGGER Tg_DonHangTruoc2019 ON DONHANG FOR DELETE
+AS
+BEGIN
+	DECLARE @NgayDatHang date
+	SELECT @NgayDatHang = NgayDatHang FROM deleted
+
+	IF (@NgayDatHang > '1/1/2019')
+	BEGIN
+		PRINT N'Chỉ được xóa những đơn hàng có ngày đặt hàng trước năm 2019'
+		ROLLBACK TRANSACTION
+	END
+END
+GO
+
+delete DONHANG
+where MaDH = 'DH006'
+GO
+
+--Event: e_GiamGia. Mỗi 5 giây giảm giá sản phẩm 1 đi 500 đồng trong vòng 20 giây
+
+CREATE EVENT e_GiamGia
+ON SCHEDULE EVERY 5 SECOND
+STARTS CURRENT_TIMESTAMP
+ENDS CURRENT_TIMESTAMP + interval 20 SECOND
+DO
+	UPDATE SANPHAM SET Gia = Gia - 500 WHERE MaSP = 'SP001';
+GO
+
+--4
+--Trigger: Tg_GiaBan. Viết trigger cho bảng CHITIET để sao cho chỉ chấp nhận giá hàng bán ra phải nhỏ hơn hoặc bằng giá gốc.
+
+alter TRIGGER Tg_GiaBan ON CHITIET FOR INSERT 
+AS
+BEGIN
+	IF EXISTS(SELECT inserted.MaCT
+			FROM SANPHAM JOIN inserted ON SANPHAM.MaSP = inserted.MaSP
+			WHERE SANPHAM.Gia < inserted.GiaSP)
+	BEGIN
+		PRINT N'Giá bán ra phải nhỏ hơn hoặc bằng giá gốc bạn ơi.'
+		ROLLBACK TRANSACTION
+	END
+END
+GO
+
+select * from CHITIET
+
+INSERT INTO CHITIET(MaCT, MaDH, MaSP, SoLuongMua, GiaSP, ThanhTien)
+VALUES	('CT0012', 'DH001', 'SP001', '2', '2000', '100000')
+
+--Event: e_ThemSP. Sản phẩm được thêm sau 2p sự kiện được tạo.
+CREATE EVENT e_ThemSP
+ON SCHEDULE AT CURRENT_TIMESTAMP + 2 MINUTES
+DO
+  INSERT INTO SANPHAM(MaSP, TenSP, MoTa, Gia, SoLuong)
+  VALUES('SP008',N'Mứt', N'Thơm ngon','30000', '100')
+GO
